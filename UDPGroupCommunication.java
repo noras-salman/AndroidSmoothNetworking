@@ -1,8 +1,11 @@
-package com.nasable.smoothnetworking;
+package com.nasable.soothnetworking;
 
 /**
  * Created by noras on 9/3/2017.
  */
+
+import android.os.AsyncTask;
+import android.os.SystemClock;
 
 import java.io.IOException;
 import java.net.DatagramPacket;
@@ -13,10 +16,6 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
-
-import android.os.AsyncTask;
-import android.os.SystemClock;
-import android.util.Log;
 
 public class UDPGroupCommunication {
 

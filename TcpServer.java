@@ -1,6 +1,7 @@
-package com.nasable.smoothnetworking;
+package com.nasable.soothnetworking;
 
 import android.os.AsyncTask;
+
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -15,7 +16,6 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 
-
 public class TcpServer {
 
     private int SERVER_PORT;
@@ -26,21 +26,25 @@ public class TcpServer {
     private boolean mRun = false;
     // used to send messages
     private PrintWriter mBufferOut;
-    // used to read messages from the server
-    private BufferedReader mBufferIn;
+
 
     private int clientIDCounter;
-    Vector<ServerClientSocket> clients;
+    private Vector<ServerClientSocket> clients;
 
-    int corePoolSize = 60;
-    int maximumPoolSize = 80;
-    int keepAliveTime = 10;
-    BlockingQueue<Runnable> workQueue = new LinkedBlockingQueue<Runnable>(maximumPoolSize);
-    Executor threadPoolExecutor = new ThreadPoolExecutor(corePoolSize, maximumPoolSize, keepAliveTime, TimeUnit.SECONDS, workQueue);
+    private  ServerSocket serverSocket;
+
+    private int corePoolSize = 60;
+    private int maximumPoolSize = 80;
+    private int keepAliveTime = 10;
+    private BlockingQueue<Runnable> workQueue = new LinkedBlockingQueue<Runnable>(maximumPoolSize);
+    private Executor threadPoolExecutor = new ThreadPoolExecutor(corePoolSize, maximumPoolSize, keepAliveTime, TimeUnit.SECONDS, workQueue);
 
 
     public interface OnActionListener {
+
         public void onMessage(int clientID, String message);
+
+        public void onMessageSent(int clientID, String message);
 
         public void onClientConnect(int clientID);
 
@@ -53,6 +57,7 @@ public class TcpServer {
         public void onStart();
     }
 
+
     public TcpServer( int serverPort, OnActionListener mOnActionListener) {
         SERVER_PORT = serverPort;
         this.mOnActionListener = mOnActionListener;
@@ -60,10 +65,18 @@ public class TcpServer {
         clients = new Vector<ServerClientSocket>();
     }
 
-
+    public void setOnActionListener(OnActionListener mOnActionListener){
+        this.mOnActionListener = mOnActionListener;
+    }
 
 
     public void stopServer() {
+        try {
+            serverSocket.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
         mRun = false;
         if (mBufferOut != null) {
             mBufferOut.flush();
@@ -71,50 +84,21 @@ public class TcpServer {
         }
 
         mOnActionListener = null;
-        mBufferIn = null;
+
         mBufferOut = null;
-        for (int i = 0; i < clients.size(); i++)
-            clients.elementAt(i).getTcpClient().stopClient();
+        for (int i = 0; i < clients.size(); i++) {
+            if(clients.elementAt(i).getTcpClient().isRunning())
+                clients.elementAt(i).getTcpClient().stopClient();
+        }
 
         clients.removeAllElements();
 
         if (mOnActionListener != null)
             mOnActionListener.onClose();
+
+        if(tcpServerAsyncTask.getStatus().equals(AsyncTask.Status.RUNNING))
+            tcpServerAsyncTask.cancel(true);
     }
-
-    public void send(int clientID, String message) {
-        new MessageSendingAsyncTask(clientID,message).executeOnExecutor(threadPoolExecutor);
-    }
-
-    private class MessageSendingAsyncTask extends AsyncTask<Void, Void, Void> {
-        int clientID;
-        String message;
-
-        public MessageSendingAsyncTask(int clientID, String message) {
-            this.clientID = clientID;
-            this.message = message;
-        }
-
-        @Override
-        protected Void doInBackground(Void... voids) {
-            for (int i = 0; i < clients.size(); i++) {
-                if (clients.elementAt(i).getID() == clientID) {
-                    clients.elementAt(i).getTcpClient().sendMessage(message);
-                    return null;
-                }
-            }
-            if (mOnActionListener != null)
-                publishProgress();
-            return null;
-        }
-
-        @Override
-        protected void onProgressUpdate(Void... voids) {
-            mOnActionListener.onError("Could not find client ID=" + clientID);
-        }
-    }
-
-
 
 
     private int getNewClientId() {
@@ -127,28 +111,34 @@ public class TcpServer {
     }
 
     public void removeClient(int clientID) {
-        for (int i = 0; i < clients.size(); i++) {
-            if (clients.elementAt(i).getID() == clientID) {
-                clients.elementAt(i).getTcpClient().stopClient();
-                clients.remove(clients.elementAt(i));
-                return;
+        try {
+            for (int i = 0; i < clients.size(); i++) {
+                if (clients.elementAt(i).getID() == clientID) {
+
+                    if(clients.elementAt(i).getTcpClient().isRunning())
+                        clients.elementAt(i).getTcpClient().stopClient();
+
+                    clients.removeElementAt(i);
+                    return;
+                }
             }
-        }
+        }catch (Exception e){}
+
         if (mOnActionListener != null)
             mOnActionListener.onError("Could not find client ID=" + clientID);
+
     }
 
     public int getNumOfClients() {
         return clients.size();
     }
 
+    private TcpServerAsyncTask tcpServerAsyncTask;
+
     public void run() {
-        new TcpServerAsyncTask().executeOnExecutor(threadPoolExecutor);
+        tcpServerAsyncTask= new TcpServerAsyncTask();
+        tcpServerAsyncTask.executeOnExecutor(threadPoolExecutor);
     }
-
-
-
-
 
     private class Action{
         String type;
@@ -191,7 +181,7 @@ public class TcpServer {
             mRun = true;
 
             try {
-                ServerSocket serverSocket = new ServerSocket(SERVER_PORT);
+                 serverSocket = new ServerSocket(SERVER_PORT);
                 if (mOnActionListener != null)
                     publishProgress(new Action(ON_START,null,0,null));
 
@@ -212,7 +202,7 @@ public class TcpServer {
                 e.printStackTrace();
                 if (mOnActionListener != null){
                     publishProgress(new Action(ON_ERROR,"Could not create server " + e.getMessage(),0,null));
-                    //TODO: add on close
+
                 }
             }
             return null;
@@ -221,6 +211,7 @@ public class TcpServer {
         @Override
         protected void onProgressUpdate(Action... values) {
             Action publishedAction=values[0];
+
             if(publishedAction.getType().equals(ON_START))
                 mOnActionListener.onStart();
             else if(publishedAction.getType().equals(ON_ERROR))
@@ -228,6 +219,15 @@ public class TcpServer {
             else if(publishedAction.getType().equals(ON_NEW_CLIENT))
                 addNewClient(new ServerClientSocket(publishedAction.getClientID(), publishedAction.getClientSocket()));
         }
+
+        @Override
+        protected void onPostExecute(Void aVoid) {
+            super.onPostExecute(aVoid);
+            stopServer();
+        }
+
+
+
     }
 
 
@@ -243,6 +243,8 @@ public class TcpServer {
         /* Constructor */
         public ServerClientSocket(final int ID, Socket socket) {
             this.ID = ID;
+
+
             this.tcpClient=new TcpClient(socket, new TcpClient.OnActionListener() {
                 @Override
                 public void onMessage(String message) {
@@ -284,6 +286,49 @@ public class TcpServer {
         @Override
         public boolean equals(Object obj) {
             return obj instanceof ServerClientSocket && ((ServerClientSocket) obj).getID() == ID;
+        }
+    }
+
+
+    public void send(int clientID, String message) {
+        new MessageSendingAsyncTask(clientID,message).executeOnExecutor(threadPoolExecutor);
+    }
+
+    private class MessageSendingAsyncTask extends AsyncTask<Void, Void, Void> {
+        int clientID;
+        String message;
+        boolean withErrors=false;
+
+        public MessageSendingAsyncTask(int clientID, String message) {
+            this.clientID = clientID;
+            this.message = message;
+        }
+
+        @Override
+        protected Void doInBackground(Void... voids) {
+            for (int i = 0; i < clients.size(); i++) {
+                if (clients.elementAt(i).getID() == clientID) {
+                    clients.elementAt(i).getTcpClient().sendMessage(message);
+                    return null;
+                }
+            }
+            if (mOnActionListener != null)
+                publishProgress();
+
+            withErrors=true;
+            return null;
+        }
+
+        @Override
+        protected void onProgressUpdate(Void... voids) {
+            mOnActionListener.onError("Could not find client ID=" + clientID);
+        }
+
+        @Override
+        protected void onPostExecute(Void aVoid) {
+            super.onPostExecute(aVoid);
+            if(!withErrors && mOnActionListener != null)
+                mOnActionListener.onMessageSent(clientID,message);
         }
     }
 

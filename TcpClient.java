@@ -1,8 +1,11 @@
-package com.nasable.smoothnetworking;
+package com.nasable.soothnetworking;
 
 import android.os.AsyncTask;
+import android.util.Log;
+
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
+import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
@@ -33,7 +36,11 @@ public class TcpClient {
     private Socket socket = null;
     InetAddress serverAddr = null;
 
+    private final int MAX_MESSAGE_LENGTH=2048;
 
+    public boolean isRunning(){
+        return mRun;
+    }
 
     public interface OnActionListener {
         public void onMessage(String message);
@@ -70,7 +77,7 @@ public class TcpClient {
 
     int corePoolSize = 60;
     int maximumPoolSize = 80;
-    int keepAliveTime = 10;
+    int keepAliveTime = 40;
 
     BlockingQueue<Runnable> workQueue = new LinkedBlockingQueue<Runnable>(maximumPoolSize);
     Executor threadPoolExecutor = new ThreadPoolExecutor(corePoolSize, maximumPoolSize, keepAliveTime, TimeUnit.SECONDS, workQueue);
@@ -105,7 +112,11 @@ public class TcpClient {
      * Close the connection and release the members
      */
     public void stopClient() {
-
+        try {
+            socket.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
         mRun = false;
 
         if (mBufferOut != null) {
@@ -120,11 +131,16 @@ public class TcpClient {
         mBufferOut = null;
         mServerMessage = null;
 
+        if(tcpClientAsyncTask.getStatus().equals(AsyncTask.Status.RUNNING))
+            tcpClientAsyncTask.cancel(true);
 
+        Log.d("stopClient","done "+tcpClientAsyncTask.isCancelled());
     }
-
+    private TcpClientAsyncTask tcpClientAsyncTask;
     public void run() {
-        new TcpClientAsyncTask().executeOnExecutor(threadPoolExecutor);
+        tcpClientAsyncTask= new TcpClientAsyncTask();
+        tcpClientAsyncTask.executeOnExecutor(threadPoolExecutor);
+
     }
 
     private class TcpClientAsyncTask extends AsyncTask<Void, Action, Void> {
@@ -158,19 +174,37 @@ public class TcpClient {
 
                     //in this while the client listens for the messages sent by the server
                     while (mRun) {
+                            //mServerMessage=mBufferIn.readLine();
 
-                        mServerMessage = mBufferIn.readLine();
 
-                        if (mServerMessage != null && mOnActionListener != null) {
-                            //call the method messageReceived from MyActivity class
-                            publishProgress(new Action(ON_MESSAGE, mServerMessage));
 
-                        }
+                            char[] buff = new char[MAX_MESSAGE_LENGTH];
+                            StringBuilder response= new StringBuilder();
+                            int read;
+                            while((read =  mBufferIn.read(buff))!=-1){
+                                response.append( buff,0,read );
+                                break;
+                            }
+
+                            if(!response.toString().isEmpty()){
+                                mServerMessage=response.toString();
+                            }
+
+                            if (mServerMessage != null && mOnActionListener != null) {
+                                //call the method messageReceived from MyActivity class
+
+                                publishProgress(new Action(ON_MESSAGE, mServerMessage));
+
+                                mServerMessage=null;
+                            }
+
+
 
                     }
 
 
                 } catch (Exception e) {
+
                     if (mOnActionListener != null)
                         publishProgress(new Action(ON_ERROR, "Exception thrown"));
 
@@ -182,7 +216,8 @@ public class TcpClient {
                         publishProgress(new Action(ON_CLOSE, null));
 
 
-                    socket.close();
+
+
                 }
 
             } catch (Exception e) {
@@ -210,6 +245,12 @@ public class TcpClient {
                     mOnActionListener.onMessage(publishedAction.getMsg());
             }
         }
+
+        @Override
+        protected void onPostExecute(Void aVoid) {
+            super.onPostExecute(aVoid);
+            stopClient();
+        }
     }
 
     private class MessageSendingAsyncTask extends AsyncTask<Void, Void, Void> {
@@ -223,9 +264,17 @@ public class TcpClient {
         protected Void doInBackground(Void... voids) {
             if (mBufferOut != null && !mBufferOut.checkError()) {
                 mBufferOut.println(message);
-                mBufferOut.flush();
+
             }
             return null;
+        }
+
+        @Override
+        protected void onPostExecute(Void aVoid) {
+            super.onPostExecute(aVoid);
+            if (mBufferOut != null && !mBufferOut.checkError()) {
+                mBufferOut.flush();
+            }
         }
     }
 
