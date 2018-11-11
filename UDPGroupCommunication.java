@@ -1,4 +1,3 @@
-package com.nasable.soothnetworking;
 
 /**
  * Created by noras on 9/3/2017.
@@ -101,16 +100,20 @@ public class UDPGroupCommunication {
         this.ip = ip;
         this.onActionListener = onActionListener;
     }
-
+    ReceiverMulticastAsyncTask receiverMulticastAsyncTask;
     /* Join the group and start receiving*/
     public void start() {
-        new ReceiverMulticastAsyncTask().executeOnExecutor(threadPoolExecutor);
+
+         receiverMulticastAsyncTask=  new ReceiverMulticastAsyncTask();
+        receiverMulticastAsyncTask.executeOnExecutor(threadPoolExecutor);
     }
 
 
     public void stop() {
         WORKING = false;
-        PERIODIC_SEND = false;
+        stopPeriodicSend();
+        if(receiverMulticastAsyncTask!=null && receiverMulticastAsyncTask.getStatus().equals(AsyncTask.Status.RUNNING))
+            receiverMulticastAsyncTask.cancel(true);
     }
 
 
@@ -129,7 +132,9 @@ public class UDPGroupCommunication {
 
     public void stopPeriodicSend() {
         PERIODIC_SEND = false;
-        periodicSenderAsyncTask.cancel(true);
+        if(periodicSenderAsyncTask!=null && periodicSenderAsyncTask.getStatus().equals(AsyncTask.Status.RUNNING))
+            periodicSenderAsyncTask.cancel(true);
+
     }
 
 
