@@ -158,4 +158,3 @@ and if you want to use getIP <uses-permission android:name="android.permission.A
         simpleWebServer.run();
 
 ```
-Todo: fix image files serving
