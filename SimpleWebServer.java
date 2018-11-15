@@ -1,4 +1,3 @@
-package com.nasable.soothnetworking;
 
 import android.content.Context;
 import android.content.res.AssetManager;
@@ -7,6 +6,7 @@ import android.util.Log;
 import android.webkit.MimeTypeMap;
 
 import java.io.BufferedReader;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -30,14 +30,19 @@ public class SimpleWebServer extends TcpServer {
         setOnActionListener(new OnActionListener() {
 
             @Override
-            public void onMessage(int clientID, String message) {
-                Log.d("onMessage", clientID + "  " + message);
-                handleRequest(clientID, message);
+            public void onMessage(int clientID, NetworkData networkData) {
+                Log.d("onMessage", clientID  +"");
+
             }
 
             @Override
-            public void onMessageSent(final int clientID, String message) {
-                Log.d("onMessageSent", clientID + "  " + message);
+            public void onMessage(int clientID, byte[] rawData) {
+                handleRequest(clientID, new String(rawData));
+            }
+
+            @Override
+            public void onMessageSent(final int clientID,  NetworkData networkData) {
+                Log.d("onMessage", clientID  +"");
                 setCloseHandler(clientID);
             }
 
@@ -73,9 +78,9 @@ public class SimpleWebServer extends TcpServer {
 
 
 
-    private void handleRequest(int clientID, String message) {
+    private void handleRequest(int clientID,String requestString) {
 
-        Request request = parseRequest(message);
+        Request request = parseRequest(requestString);
 
         //parse and set action
         if (request != null) {
@@ -83,20 +88,23 @@ public class SimpleWebServer extends TcpServer {
             int index;
             Route comparable = new Route(request.getRoute()) {
                 @Override
-                public String renderContent(Request request) {
+                public byte[] renderContent(Request request) {
                     return null;
                 }
             };
 
             if ((index = routes.indexOf(comparable)) == -1) {
-                send(clientID, throwNotFound("Not Found"));
+                send(clientID, throwNotFound("Not Found").getBytes());
             } else {
-                send(clientID, getHtmlResponse(routes.get(index).renderContent(request),routes.get(index).getContentType()));
+               // if(routes.get(index).getContentType().contains("text"))
+                    send(clientID, getHtmlResponse(routes.get(index).renderContent(request),routes.get(index).getContentType()));
+              //  else
+                //    send(clientID, getHtmlResponse(routes.get(index).renderContent(request),routes.get(index).getContentType()).getBytes());
             }
 
 
         } else {
-            send(clientID, throwError("Internal Server Error"));
+            send(clientID, throwError("Internal Server Error").getBytes());
 
         }
 
@@ -126,7 +134,7 @@ public class SimpleWebServer extends TcpServer {
             return contentType;
         }
 
-        public abstract String renderContent(Request request);
+        public abstract byte[] renderContent(Request request);
 
         public void setContentType(String contentType){
             this.contentType=contentType;
@@ -179,8 +187,12 @@ public class SimpleWebServer extends TcpServer {
 
     }
 
-    private String getHtmlResponse(String htmlResponse,String contentType) {
-        return "HTTP/1.1 200 OK\r\nConnection: close\r\nContent-type: "+contentType+"\r\n" + "Content-length: " + htmlResponse.length() + "\r\n\r\n" + htmlResponse;
+    private byte[] getHtmlResponse(byte[] htmlResponse,String contentType) {
+        String head="HTTP/1.1 200 OK\r\nConnection: close\r\nContent-type: "+contentType+"\r\n" + "Content-length: " + htmlResponse.length + "\r\n\r\n";
+        ByteArrayOutputStream builder = new ByteArrayOutputStream();
+        builder.write(head.getBytes(),0,head.getBytes().length);
+        builder.write(htmlResponse,0,htmlResponse.length);
+        return builder.toByteArray();
     }
 
     private String throwNotFound(String htmlResponse) {
@@ -412,7 +424,7 @@ public class SimpleWebServer extends TcpServer {
                         final String name=path + "/" + file;
                         addRoute(new Route(name) {
                             @Override
-                            public String renderContent(Request request) {
+                            public byte[] renderContent(Request request) {
                                 try {
                                     setContentType(getMimeBasedOnExtension(name.substring(1)));
                                     return readFromAssets(context,name.substring(1));
@@ -420,7 +432,7 @@ public class SimpleWebServer extends TcpServer {
                                     e.printStackTrace();
                                 }
 
-                                return "File Not Found";
+                                return "File Not Found".getBytes();
                             }
                         });
                     }
@@ -434,23 +446,20 @@ public class SimpleWebServer extends TcpServer {
     }
 
 
-    private static String readFromAssets(Context context, String filename) throws IOException {
-        BufferedReader reader = new BufferedReader(new InputStreamReader(context.getAssets().open(filename)));
+    public static byte[] byteArrayFromInputStream(InputStream inputStream) throws IOException {
 
-
-
-
-
-        char[] buff = new char[8096];
-        StringBuilder sb= new StringBuilder();
-        int read;
-        while((read =  reader.read(buff))!=-1){
-            sb.append( buff,0,read );
-
+        byte[] buffer = new byte[8192];
+        int bytesRead;
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        while ((bytesRead = inputStream.read(buffer)) != -1) {
+            output.write(buffer, 0, bytesRead);
         }
+        return output.toByteArray();
+    }
 
-        reader.close();
-        return sb.toString();
+    private static byte[] readFromAssets(Context context, String filename) throws IOException {
+
+        return byteArrayFromInputStream(context.getAssets().open(filename));
     }
 
 }

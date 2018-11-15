@@ -2,70 +2,107 @@
 Android Smooth Networking
 
 #  Usage
+Requires <uses-permission android:name="android.permission.INTERNET"/>
+
+and if you want to use getIP <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
+
 ## TcpServer
 ```java
- TcpServer tcpServer=new TcpServer(8081, new TcpServer.OnActionListener() {
-            @Override
-            public void onMessage(int clientID, String message) {
-
-            }
-            
-            @Override
-            public void onMessageSent(int clientID, String message){
-            
-            }
-
-            @Override
-            public void onClientConnect(int clientID) {
+ TcpServer tcpServer =new TcpServer(8080, new TcpServer.OnActionListener() {
+                       @Override
+                       public void onMessage(int clientID, NetworkData networkData) {
+                           if(networkData.isFileData()){
+                               networkData.getMetaData().getFileName();
+                               try {
+                                   ////<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
+                                   FileNetworkData.writeToDownload(getApplicationContext(),networkData);
+                               } catch (Exception e) {
+                                   e.printStackTrace();
+                               }
+                           }else if(networkData.isStringData()){
+                               networkData.isStringData();
+                           }else if(networkData.isRawData()){
+                               networkData.getRawData();
+                           }
+                       }
            
-            }
-
-            @Override
-            public void onClientDisconnect(int clientID) {
-
-            }
-
-            @Override
-            public void onError(String errorMessage) {
-
-            }
-
-            @Override
-            public void onClose() {
-
-            }
-
-            @Override
-            public void onStart() {
-
-            }
-        });
+                       @Override
+                       public void onMessage(int clientID, byte[] rawData) {
+           
+                       }
+           
+                       @Override
+                       public void onMessageSent(int clientID, NetworkData networkData) {
+           
+                       }
+           
+                       @Override
+                       public void onClientConnect(int clientID) {
+           
+                       }
+           
+                       @Override
+                       public void onClientDisconnect(int clientID) {
+           
+                       }
+           
+                       @Override
+                       public void onError(String errorMessage) {
+           
+                       }
+           
+                       @Override
+                       public void onClose() {
+           
+                       }
+           
+                       @Override
+                       public void onStart() {
+                           tcpServer.getIP(getApplicationContext());
+                       }
+                   });
         tcpServer.run();
 ```
 
 ## TcpClient
 ```java
-       TcpClient tcpClient=new TcpClient("127.0.0.1", 8081, new TcpClient.OnActionListener() {
-            @Override
-            public void onMessage(String message) {
-
-            }
-
-            @Override
-            public void onError(String errorMessage) {
-
-            }
-
-            @Override
-            public void onClose() {
-
-            }
-
-            @Override
-            public void onConnect() {
-
-            }
-        });
+       TcpClient tcpClient=new TcpClient(tcpServer.getIP(getApplicationContext()), 8080, new TcpClient.OnActionListener() {
+                             @Override
+                             public void onMessage(NetworkData networkData) {
+                 
+                             }
+                 
+                             @Override
+                             public void onMessage(byte[] rawData) {
+                 
+                             }
+                 
+                             @Override
+                             public void onError(String errorMessage) {
+                                 Log.d("onClientError",""+errorMessage);
+                             }
+                 
+                             @Override
+                             public void onClose() {
+                                 Log.d("onClose","onCloseclient");
+                             }
+                 
+                             @Override
+                             public void onConnect() {
+                                 Log.d("clientStart","clientStart");
+                 
+                                 tcpClient.sendMessage("hi");
+                                 try {
+                                     tcpClient.send(FileNetworkData.sendAssetFile(getApplicationContext(),"c.png"));
+                                     //<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
+                                     tcpClient.send(FileNetworkData.sendExternalStorageFile("/some/path"));
+                                 } catch (IOException e) {
+                                     e.printStackTrace();
+                                 }
+                 
+                 
+                             }
+                         });
         tcpClient.run();
 ```
 
@@ -99,26 +136,26 @@ Android Smooth Networking
 ## Web Server
 ```java
 
-SimpleWebServer simpleWebServersimpleWebServer=new SimpleWebServer(8080);
-
-  simpleWebServer.addRoute(new SimpleWebServer.Route("/auth") {
+ SimpleWebServer simpleWebServer=new SimpleWebServer(8080);
+        simpleWebServer.getIP(getApplicationContext());
+        simpleWebServer.addRoute(new SimpleWebServer.Route("/auth") {
             @Override
-            public String renderContent(SimpleWebServer.Request request) {
-                 String username=request.retrievePOSTParameter("username");
-                 String password=request.retrievePOSTParameter("password");
-                 String ref=request.retrieveGETParameter("ref");
-                 String cookie=request.retrieveHeader("Cookie");
-                 if(username!=null && password!=null){
+            public byte[] renderContent(SimpleWebServer.Request request) {
+                String username=request.retrievePOSTParameter("username");
+                String password=request.retrievePOSTParameter("password");
+                String ref=request.retrieveGETParameter("ref");
+                String cookie=request.retrieveHeader("Cookie");
+                if(username!=null && password!=null){
                     //do something
-                    return "<html></html>";
-                 }                  
-                return request.toString();
+                    return "<html>hi</html>".getBytes();
+                }
+                return request.toString().getBytes();
             }
         });
-        
-   //add everything in the assets/ to the webserver
-   simpleWebServer.prepareAssets(getApplicationContext(),"");
-   simpleWebServer.run();
+
+        //add everything in the assets/ to the webserver
+        simpleWebServer.prepareAssets(getApplicationContext(),"");
+        simpleWebServer.run();
 
 ```
 Todo: fix image files serving

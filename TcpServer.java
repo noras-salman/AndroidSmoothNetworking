@@ -1,9 +1,10 @@
-package com.nasable.soothnetworking;
 
+import android.content.Context;
+import android.net.wifi.WifiManager;
 import android.os.AsyncTask;
+import android.text.format.Formatter;
+import android.util.Log;
 
-
-import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.net.ServerSocket;
@@ -15,11 +16,12 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
+import static android.content.Context.WIFI_SERVICE;
+
 
 public class TcpServer {
 
     private int SERVER_PORT;
-
     // sends message received notifications
     private OnActionListener mOnActionListener = null;
     // while this is true, the server will continue running
@@ -31,7 +33,7 @@ public class TcpServer {
     private int clientIDCounter;
     private Vector<ServerClientSocket> clients;
 
-    private  ServerSocket serverSocket;
+    private ServerSocket serverSocket;
 
     private int corePoolSize = 60;
     private int maximumPoolSize = 80;
@@ -42,9 +44,10 @@ public class TcpServer {
 
     public interface OnActionListener {
 
-        public void onMessage(int clientID, String message);
+        public void onMessage(int clientID, NetworkData networkData);
+        public void onMessage(int clientID, byte[] rawData);
 
-        public void onMessageSent(int clientID, String message);
+        public void onMessageSent(int clientID, NetworkData networkData);
 
         public void onClientConnect(int clientID);
 
@@ -57,15 +60,22 @@ public class TcpServer {
         public void onStart();
     }
 
+    /*Requires android.permission.ACCESS_WIFI_STATE*/
+    public String getIP(Context context) {
+        WifiManager wm = (WifiManager) context.getSystemService(WIFI_SERVICE);
+        String ip = Formatter.formatIpAddress(wm.getConnectionInfo().getIpAddress());
+        Log.d("getIP", ip);
+        return ip;
+    }
 
-    public TcpServer( int serverPort, OnActionListener mOnActionListener) {
+    public TcpServer(int serverPort, OnActionListener mOnActionListener) {
         SERVER_PORT = serverPort;
         this.mOnActionListener = mOnActionListener;
         clientIDCounter = 0;
         clients = new Vector<ServerClientSocket>();
     }
 
-    public void setOnActionListener(OnActionListener mOnActionListener){
+    public void setOnActionListener(OnActionListener mOnActionListener) {
         this.mOnActionListener = mOnActionListener;
     }
 
@@ -87,7 +97,7 @@ public class TcpServer {
 
         mBufferOut = null;
         for (int i = 0; i < clients.size(); i++) {
-            if(clients.elementAt(i).getTcpClient().isRunning())
+            if (clients.elementAt(i).getTcpClient().isRunning())
                 clients.elementAt(i).getTcpClient().stopClient();
         }
 
@@ -96,7 +106,7 @@ public class TcpServer {
         if (mOnActionListener != null)
             mOnActionListener.onClose();
 
-        if(tcpServerAsyncTask.getStatus().equals(AsyncTask.Status.RUNNING))
+        if (tcpServerAsyncTask.getStatus().equals(AsyncTask.Status.RUNNING))
             tcpServerAsyncTask.cancel(true);
     }
 
@@ -115,14 +125,15 @@ public class TcpServer {
             for (int i = 0; i < clients.size(); i++) {
                 if (clients.elementAt(i).getID() == clientID) {
 
-                    if(clients.elementAt(i).getTcpClient().isRunning())
+                    if (clients.elementAt(i).getTcpClient().isRunning())
                         clients.elementAt(i).getTcpClient().stopClient();
 
                     clients.removeElementAt(i);
                     return;
                 }
             }
-        }catch (Exception e){}
+        } catch (Exception e) {
+        }
 
         if (mOnActionListener != null)
             mOnActionListener.onError("Could not find client ID=" + clientID);
@@ -136,11 +147,11 @@ public class TcpServer {
     private TcpServerAsyncTask tcpServerAsyncTask;
 
     public void run() {
-        tcpServerAsyncTask= new TcpServerAsyncTask();
+        tcpServerAsyncTask = new TcpServerAsyncTask();
         tcpServerAsyncTask.executeOnExecutor(threadPoolExecutor);
     }
 
-    private class Action{
+    private class Action {
         String type;
         String msg;
         int clientID;
@@ -171,7 +182,7 @@ public class TcpServer {
     }
 
 
-    private class TcpServerAsyncTask extends AsyncTask<Void,Action,Void>{
+    private class TcpServerAsyncTask extends AsyncTask<Void, Action, Void> {
         private final String ON_ERROR = "ON_ERROR";
         private final String ON_START = "ON_START";
         private final String ON_NEW_CLIENT = "ON_NEW_CLIENT";
@@ -181,9 +192,9 @@ public class TcpServer {
             mRun = true;
 
             try {
-                 serverSocket = new ServerSocket(SERVER_PORT);
+                serverSocket = new ServerSocket(SERVER_PORT);
                 if (mOnActionListener != null)
-                    publishProgress(new Action(ON_START,null,0,null));
+                    publishProgress(new Action(ON_START, null, 0, null));
 
                 while (mRun) {
                     Socket clientSocket = null;
@@ -191,17 +202,17 @@ public class TcpServer {
                         clientSocket = serverSocket.accept();
                     } catch (IOException e) {
                         if (mOnActionListener != null)
-                            publishProgress(new Action(ON_ERROR,"Error accepting client",0,null));
+                            publishProgress(new Action(ON_ERROR, "Error accepting client", 0, null));
                         break;
                     }
                     int newClientId = getNewClientId();
-                    publishProgress(new Action(ON_NEW_CLIENT,null,newClientId,clientSocket));
+                    publishProgress(new Action(ON_NEW_CLIENT, null, newClientId, clientSocket));
                 }
 
             } catch (Exception e) {
                 e.printStackTrace();
-                if (mOnActionListener != null){
-                    publishProgress(new Action(ON_ERROR,"Could not create server " + e.getMessage(),0,null));
+                if (mOnActionListener != null) {
+                    publishProgress(new Action(ON_ERROR, "Could not create server " + e.getMessage(), 0, null));
 
                 }
             }
@@ -210,13 +221,13 @@ public class TcpServer {
 
         @Override
         protected void onProgressUpdate(Action... values) {
-            Action publishedAction=values[0];
+            Action publishedAction = values[0];
 
-            if(publishedAction.getType().equals(ON_START))
+            if (publishedAction.getType().equals(ON_START))
                 mOnActionListener.onStart();
-            else if(publishedAction.getType().equals(ON_ERROR))
+            else if (publishedAction.getType().equals(ON_ERROR))
                 mOnActionListener.onError(publishedAction.getMsg());
-            else if(publishedAction.getType().equals(ON_NEW_CLIENT))
+            else if (publishedAction.getType().equals(ON_NEW_CLIENT))
                 addNewClient(new ServerClientSocket(publishedAction.getClientID(), publishedAction.getClientSocket()));
         }
 
@@ -227,11 +238,7 @@ public class TcpServer {
         }
 
 
-
     }
-
-
-
 
 
     /* A wrapper for the TcpClient Class
@@ -245,17 +252,23 @@ public class TcpServer {
             this.ID = ID;
 
 
-            this.tcpClient=new TcpClient(socket, new TcpClient.OnActionListener() {
+            this.tcpClient = new TcpClient(socket, new TcpClient.OnActionListener() {
                 @Override
-                public void onMessage(String message) {
+                public void onMessage(NetworkData networkData) {
                     if (mOnActionListener != null)
-                    mOnActionListener.onMessage(ID, message);
+                        mOnActionListener.onMessage(ID, networkData);
+                }
+
+                @Override
+                public void onMessage(byte[] rawData) {
+                    if (mOnActionListener != null)
+                        mOnActionListener.onMessage(ID, rawData);
                 }
 
                 @Override
                 public void onError(String errorMessage) {
                     if (mOnActionListener != null)
-                        mOnActionListener.onError("Client ID=("+ID+"),"+errorMessage);
+                        mOnActionListener.onError("Client ID=(" + ID + ")," + errorMessage);
                 }
 
                 @Override
@@ -269,7 +282,7 @@ public class TcpServer {
                 @Override
                 public void onConnect() {
                     if (mOnActionListener != null)
-                    mOnActionListener.onClientConnect(ID);
+                        mOnActionListener.onClientConnect(ID);
                 }
             });
             this.tcpClient.run();
@@ -289,33 +302,61 @@ public class TcpServer {
         }
     }
 
-
-    public void send(int clientID, String message) {
-        new MessageSendingAsyncTask(clientID,message).executeOnExecutor(threadPoolExecutor);
+    public void send(int clientID, byte[] byteData) {
+        new MessageSendingAsyncTask(clientID, byteData).executeOnExecutor(threadPoolExecutor);
     }
+
+    public void send(int clientID, NetworkData networkData) {
+        new MessageSendingAsyncTask(clientID, networkData).executeOnExecutor(threadPoolExecutor);
+    }
+    /**
+     * Sends the message entered by client to the server
+     *
+     * @param message byteArray
+     */
+    public void sendMessage(int clientID,String message) {
+        NetworkData networkData = NetworkData.newStringDataInstance(message);
+        new MessageSendingAsyncTask(clientID, networkData).executeOnExecutor(threadPoolExecutor);;
+    }
+
+
 
     private class MessageSendingAsyncTask extends AsyncTask<Void, Void, Void> {
         int clientID;
-        String message;
-        boolean withErrors=false;
 
-        public MessageSendingAsyncTask(int clientID, String message) {
+        boolean withErrors = false;
+        NetworkData networkData;
+        boolean completeRaw=false;
+        byte[] byteData;
+
+        public MessageSendingAsyncTask(int clientID, NetworkData networkData) {
             this.clientID = clientID;
-            this.message = message;
+            this.networkData = networkData;
         }
+        public MessageSendingAsyncTask(int clientID,byte[] byteData) {
+            this.clientID = clientID;
+            this.byteData = byteData;
+            completeRaw=true;
+        }
+
 
         @Override
         protected Void doInBackground(Void... voids) {
             for (int i = 0; i < clients.size(); i++) {
                 if (clients.elementAt(i).getID() == clientID) {
-                    clients.elementAt(i).getTcpClient().sendMessage(message);
+                    if(!completeRaw)
+                        clients.elementAt(i).getTcpClient().send(networkData);
+                    else
+                        clients.elementAt(i).getTcpClient().send(byteData);
+
+
                     return null;
                 }
             }
             if (mOnActionListener != null)
                 publishProgress();
 
-            withErrors=true;
+            withErrors = true;
             return null;
         }
 
@@ -327,8 +368,8 @@ public class TcpServer {
         @Override
         protected void onPostExecute(Void aVoid) {
             super.onPostExecute(aVoid);
-            if(!withErrors && mOnActionListener != null)
-                mOnActionListener.onMessageSent(clientID,message);
+            if (!withErrors && mOnActionListener != null)
+                mOnActionListener.onMessageSent(clientID, networkData);
         }
     }
 
